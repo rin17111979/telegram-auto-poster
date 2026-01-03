@@ -14,25 +14,20 @@ jobs:
       - name: Select random post
         id: select
         run: |
-          # Разделяем posts.txt на временные файлы по пустой строке
-          csplit -f post_ -b '%d.txt' posts.txt '/^$/' {*} 2>/dev/null || true
-          # Удаляем пустые файлы
-          for f in post_*.txt; do
-            if [ ! -s "$f" ]; then
-              rm "$f"
-            fi
-          done
+          # Разделяем posts.txt на блоки по пустой строке
+          awk -v RS="" '{print > "post_" NR ".txt"}' posts.txt
           # Считаем количество постов
           COUNT=$(ls post_*.txt 2>/dev/null | wc -l)
           if [ "$COUNT" -eq 0 ]; then
-            echo "Нет постов!"
+            echo "❌ Нет постов!"
             exit 1
           fi
           # Выбираем случайный
           RANDOM_INDEX=$((RANDOM % COUNT + 1))
-          SELECTED="post_$(printf "%0*d" 1 $((RANDOM_INDEX - 1))).txt"
-          # Читаем и экранируем переносы для curl
-          POST=$(cat "$SELECTED" | sed ':a;N;$!ba;s/\n/\\n/g')
+          SELECTED="post_${RANDOM_INDEX}.txt"
+          # Читаем весь текст поста
+          POST=$(cat "$SELECTED")
+          # Сохраняем в переменную окружения (без экранирования — curl сделает это сам)
           echo "POST<<EOF" >> $GITHUB_ENV
           echo "$POST" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
@@ -42,8 +37,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
         run: |
+          # Используем --data-urlencode для корректной передачи многострочного текста
           curl -s -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_CHANNEL}" \
-            -d text="${POST}" \
-            -d parse_mode=HTML
+            --data-urlencode "chat_id=${TELEGRAM_CHANNEL}" \
+            --data-urlencode "text=${POST}" \
+            --data-urlencode "parse_mode=HTML"
